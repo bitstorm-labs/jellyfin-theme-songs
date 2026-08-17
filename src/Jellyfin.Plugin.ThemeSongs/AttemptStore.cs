@@ -20,16 +20,42 @@ public class AttemptStore(string path)
     public async Task LoadAsync(CancellationToken ct)
     {
         if (!File.Exists(path)) return;
-        await using var stream = File.OpenRead(path);
-        _failures = await JsonSerializer
-            .DeserializeAsync<Dictionary<string, DateTimeOffset>>(stream, cancellationToken: ct)
-            .ConfigureAwait(false) ?? new();
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            _failures = await JsonSerializer
+                .DeserializeAsync<Dictionary<string, DateTimeOffset>>(stream, cancellationToken: ct)
+                .ConfigureAwait(false) ?? new();
+        }
+        catch (JsonException)
+        {
+            // Corrupted file - treat as empty history (all shows become eligible again)
+            _failures = new();
+        }
+        catch (IOException)
+        {
+            // File read error - treat as empty history (all shows become eligible again)
+            _failures = new();
+        }
     }
 
     public async Task SaveAsync(CancellationToken ct)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, _failures, cancellationToken: ct).ConfigureAwait(false);
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        var tmpPath = path + ".tmp";
+        try
+        {
+            await using var stream = File.Create(tmpPath);
+            await JsonSerializer.SerializeAsync(stream, _failures, cancellationToken: ct).ConfigureAwait(false);
+            File.Move(tmpPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tmpPath))
+            {
+                File.Delete(tmpPath);
+            }
+        }
     }
 }

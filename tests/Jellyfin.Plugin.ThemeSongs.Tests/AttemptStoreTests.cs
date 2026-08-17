@@ -58,4 +58,42 @@ public class AttemptStoreTests
         await s.LoadAsync(CancellationToken.None);
         Assert.True(s.ShouldTry("anything", 7, Now));
     }
+
+    [Fact]
+    public async Task LoadOfCorruptFileIsNotAnError()
+    {
+        var path = TempPath();
+        await File.WriteAllTextAsync(path, "{ this is not json");
+        var s = new AttemptStore(path);
+        await s.LoadAsync(CancellationToken.None);
+        Assert.True(s.ShouldTry("anything", 7, Now));
+    }
+
+    [Fact]
+    public async Task LoadOfEmptyFileIsNotAnError()
+    {
+        var path = TempPath();
+        await File.WriteAllTextAsync(path, "");
+        var s = new AttemptStore(path);
+        await s.LoadAsync(CancellationToken.None);
+        Assert.True(s.ShouldTry("anything", 7, Now));
+    }
+
+    [Fact]
+    public async Task SaveOverwritesExistingStateFile()
+    {
+        var path = TempPath();
+        var a = new AttemptStore(path);
+        a.RecordFailure("first-id", Now);
+        await a.SaveAsync(CancellationToken.None);
+
+        var b = new AttemptStore(path);
+        b.RecordFailure("second-id", Now);
+        await b.SaveAsync(CancellationToken.None);
+
+        var c = new AttemptStore(path);
+        await c.LoadAsync(CancellationToken.None);
+        Assert.True(c.ShouldTry("first-id", 7, Now));
+        Assert.False(c.ShouldTry("second-id", 7, Now));
+    }
 }

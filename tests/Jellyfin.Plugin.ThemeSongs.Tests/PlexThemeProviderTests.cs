@@ -52,9 +52,8 @@ public class PlexThemeProviderTests
     [Fact]
     public async Task ReturnsNullWhenBodyIsNotAudioDespite200()
     {
-        var html = System.Text.Encoding.ASCII.GetBytes("<html>oops</html>");
         var provider = new PlexThemeProvider(
-            new HttpClient(new StubHandler(HttpStatusCode.OK, html, "text/html")));
+            new HttpClient(new StubHandler(HttpStatusCode.OK, FakeMp3(400_000), "text/html")));
 
         Assert.Null(await provider.FetchAsync("371572", CancellationToken.None));
     }
@@ -66,5 +65,17 @@ public class PlexThemeProviderTests
             new HttpClient(new StubHandler(HttpStatusCode.OK, FakeMp3(1000), "audio/mpeg")));
 
         Assert.Null(await provider.FetchAsync("371572", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task EscapesUnexpectedCharactersInTvdbId()
+    {
+        var handler = new StubHandler(HttpStatusCode.OK, FakeMp3(), "audio/mpeg");
+        var provider = new PlexThemeProvider(new HttpClient(handler));
+
+        var result = await provider.FetchAsync("12?x=1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("https://tvthemes.plexapp.com/12%3Fx%3D1.mp3", handler.LastUri!.ToString());
     }
 }

@@ -6,7 +6,8 @@ public class PlexThemeProvider(HttpClient client) : IThemeProvider
 
     public async Task<byte[]?> FetchAsync(string tvdbId, CancellationToken ct)
     {
-        var url = string.Format(System.Globalization.CultureInfo.InvariantCulture, UrlTemplate, tvdbId);
+        var escapedId = Uri.EscapeDataString(tvdbId);
+        var url = string.Format(System.Globalization.CultureInfo.InvariantCulture, UrlTemplate, escapedId);
         using var response = await client.GetAsync(url, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode) return null;
 

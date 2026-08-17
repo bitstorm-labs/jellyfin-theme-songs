@@ -44,9 +44,12 @@ public class ThemeDownloadService(
                 {
                     result = await TryOneAsync(series[i], ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
-                    // Real cancellation must still stop the run.
+                    // Real cancellation of THIS run must still stop the sweep. Without the
+                    // filter, a TaskCanceledException from an HttpClient timeout (which derives
+                    // from OperationCanceledException) would be misclassified as cancellation
+                    // and abort the run instead of falling through to the catch below.
                     throw;
                 }
                 catch (Exception ex)
@@ -64,7 +67,7 @@ public class ThemeDownloadService(
                     logger.LogError("Library is not writable; no themes can be saved.");
                     libraryUnwritableLogged = true;
                 }
-                if (result != Outcome.Skipped) await Task.Delay(Throttle, ct).ConfigureAwait(false);
+                if (i < series.Count - 1 && result != Outcome.Skipped) await Task.Delay(Throttle, ct).ConfigureAwait(false);
             }
         }
         finally

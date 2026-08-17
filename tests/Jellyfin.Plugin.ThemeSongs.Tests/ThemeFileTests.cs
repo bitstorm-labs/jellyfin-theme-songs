@@ -53,4 +53,30 @@ public class ThemeFileTests
         Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
         Directory.Delete(dir, true);
     }
+
+    [Fact]
+    public async Task DoesNotOverwriteExistingTheme()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        var dest = Path.Combine(dir, "theme.mp3");
+
+        // Write original sentinel content
+        var sentinelContent = System.Text.Encoding.ASCII.GetBytes("ORIGINAL");
+        await File.WriteAllBytesAsync(dest, sentinelContent);
+
+        // Attempt to overwrite with different content
+        var newContent = FakeMp3(400_000);
+        var ex = await Assert.ThrowsAsync<IOException>(
+            () => ThemeFile.WriteAtomicAsync(dest, newContent, CancellationToken.None)
+        );
+
+        // Verify original file is untouched
+        var actualContent = await File.ReadAllBytesAsync(dest);
+        Assert.Equal(sentinelContent, actualContent);
+
+        // Verify no temp file left behind
+        Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
+
+        Directory.Delete(dir, true);
+    }
 }

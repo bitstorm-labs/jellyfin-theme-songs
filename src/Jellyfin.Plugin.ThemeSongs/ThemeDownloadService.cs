@@ -32,23 +32,49 @@ public class ThemeDownloadService(
         var written = 0;
         var libraryUnwritableLogged = false;
 
-        for (var i = 0; i < series.Count; i++)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            progress?.Report(i * 100.0 / series.Count);
-
-            var result = await TryOneAsync(series[i], ct).ConfigureAwait(false);
-            if (result == Outcome.Written) written++;
-            if (result == Outcome.Unwritable && !libraryUnwritableLogged)
+            for (var i = 0; i < series.Count; i++)
             {
-                // Once per run, not per item: 305 identical errors buries the one that matters.
-                logger.LogError("Library is not writable; no themes can be saved.");
-                libraryUnwritableLogged = true;
+                ct.ThrowIfCancellationRequested();
+                progress?.Report(i * 100.0 / series.Count);
+
+                Outcome result;
+                try
+                {
+                    result = await TryOneAsync(series[i], ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Real cancellation must still stop the run.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // One sick series (e.g. a refresh failure on locked/corrupt metadata,
+                    // or an HttpClient timeout) must not take down the rest of the sweep.
+                    logger.LogWarning(ex, "Unexpected error processing {Series}", series[i].Name);
+                    continue;
+                }
+
+                if (result == Outcome.Written) written++;
+                if (result == Outcome.Unwritable && !libraryUnwritableLogged)
+                {
+                    // Once per run, not per item: 305 identical errors buries the one that matters.
+                    logger.LogError("Library is not writable; no themes can be saved.");
+                    libraryUnwritableLogged = true;
+                }
+                if (result != Outcome.Skipped) await Task.Delay(Throttle, ct).ConfigureAwait(false);
             }
-            if (result == Outcome.Fetched) await Task.Delay(Throttle, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Save even if the run was cancelled or a series threw past the catch above,
+            // so recorded failures aren't lost and the backoff is honoured next run.
+            // Use CancellationToken.None: if ct is already cancelled, the save must still succeed.
+            await attempts.SaveAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
-        await attempts.SaveAsync(ct).ConfigureAwait(false);
         progress?.Report(100);
         logger.LogInformation("Theme sweep complete: {Written} themes written.", written);
         return written;

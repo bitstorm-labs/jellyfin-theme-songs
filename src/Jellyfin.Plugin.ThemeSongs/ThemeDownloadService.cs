@@ -19,6 +19,13 @@ public class ThemeDownloadService(
 {
     private static readonly TimeSpan Throttle = TimeSpan.FromSeconds(1);
 
+    /// <summary>The wait between upstream requests. Production leaves this as
+    /// <see cref="Task.Delay(TimeSpan, CancellationToken)"/>; the tests substitute a recorder so
+    /// they can assert the pacing — how many waits happen, how long each one is, and which
+    /// outcomes pay for one — without actually sleeping through 305 of them. The default is the
+    /// real delay, so nothing about the shipped behaviour depends on a test having set it.</summary>
+    internal Func<TimeSpan, CancellationToken, Task> DelayAsync { get; init; } = Task.Delay;
+
     /// <summary>One instance is constructed per run (nightly sweep or single item-added
     /// series), so this gives "log the write failure once per run, not once per item" without
     /// the two trigger paths having to agree on it separately.</summary>
@@ -65,7 +72,7 @@ public class ThemeDownloadService(
                 }
 
                 if (result == Outcome.Written) written++;
-                if (i < series.Count - 1 && result != Outcome.Skipped) await Task.Delay(Throttle, ct).ConfigureAwait(false);
+                if (i < series.Count - 1 && result != Outcome.Skipped) await DelayAsync(Throttle, ct).ConfigureAwait(false);
             }
         }
         finally

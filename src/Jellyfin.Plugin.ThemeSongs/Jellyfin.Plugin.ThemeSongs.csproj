@@ -15,4 +15,7 @@
   <ItemGroup>
     <EmbeddedResource Include="configPage.html" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.ThemeSongs.Tests" />
+  </ItemGroup>
 </Project>

@@ -79,5 +79,32 @@ jobs:
             echo "manifest.json unchanged, nothing to commit"
           else
             git commit -m "chore: update manifest.json for ${GITHUB_REF_NAME}"
-            git push origin HEAD:main
+            # The GitHub Release already exists by now, so a failed push here
+            # would leave a released-but-unlisted version that no Jellyfin can
+            # discover. Rebase onto whatever landed on main and retry rather
+            # than failing the job on a non-fast-forward.
+            for attempt in 1 2 3 4 5; do
+              if git push origin HEAD:main; then
+                echo "manifest.json pushed (attempt $attempt)"
+                exit 0
+              fi
+              echo "push rejected, rebasing onto origin/main (attempt $attempt)"
+              git fetch origin main
+              # Regenerate rather than rebase the commit: another release may
+              # have added its own version entry, and both must survive.
+              git reset --soft origin/main
+              git checkout origin/main -- manifest.json
+              python3 .github/scripts/update_manifest.py \
+                --manifest manifest.json \
+                --version "${{ steps.package.outputs.version }}.0" \
+                --checksum "${{ steps.package.outputs.checksum }}" \
+                --source-url "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}/theme-songs_${{ steps.package.outputs.version }}.zip" \
+                --target-abi "10.11.0.0" \
+                --changelog "Release ${{ steps.package.outputs.version }}. See https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME} for details."
+              git add manifest.json
+              git commit -m "chore: update manifest.json for ${GITHUB_REF_NAME}" || true
+              sleep 5
+            done
+            echo "::error::could not push manifest.json after 5 attempts — ${GITHUB_REF_NAME} is released but will not appear in the plugin repository until manifest.json is updated by hand" >&2
+            exit 1
           fi

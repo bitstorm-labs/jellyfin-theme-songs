@@ -21,6 +21,9 @@
         document.querySelector('#RetryAfterDays').value = config.RetryAfterDays;
         document.querySelector('#EnableItemAddedHook').checked = config.EnableItemAddedHook;
         Dashboard.hideLoadingMsg();
+      }).catch(function (err) {
+        Dashboard.hideLoadingMsg();
+        Dashboard.alert('Failed to load Theme Songs configuration.');
       });
     });
     document.querySelector('#ThemeSongsConfigForm').addEventListener('submit', function (e) {
@@ -29,7 +32,10 @@
       ApiClient.getPluginConfiguration(ThemeSongsPluginId).then(function (config) {
         config.RetryAfterDays = parseInt(document.querySelector('#RetryAfterDays').value, 10);
         config.EnableItemAddedHook = document.querySelector('#EnableItemAddedHook').checked;
-        ApiClient.updatePluginConfiguration(ThemeSongsPluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
+        return ApiClient.updatePluginConfiguration(ThemeSongsPluginId, config);
+      }).then(Dashboard.processPluginConfigurationUpdateResult).catch(function (err) {
+        Dashboard.hideLoadingMsg();
+        Dashboard.alert('Failed to save Theme Songs configuration.');
       });
       return false;
     });

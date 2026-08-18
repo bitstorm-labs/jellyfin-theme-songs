@@ -83,7 +83,17 @@ public class ThemeDownloadService(
         return written;
     }
 
-    public Task RunForSeriesAsync(Series series, CancellationToken ct) => TryOneAsync(series, ct);
+    /// <summary>Runs a single series through the same fetch/write/refresh pipeline as the nightly
+    /// sweep. Returns true when an upstream request was actually made (i.e. the outcome was
+    /// anything other than <see cref="Outcome.Skipped"/>) so callers that need to throttle
+    /// upstream calls know whether this invocation needs a delay - a series that was skipped
+    /// (no TVDB id, theme already present, inside the backoff window) made no request and must
+    /// not pay one.</summary>
+    public async Task<bool> RunForSeriesAsync(Series series, CancellationToken ct)
+    {
+        var outcome = await TryOneAsync(series, ct).ConfigureAwait(false);
+        return outcome != Outcome.Skipped;
+    }
 
     private enum Outcome { Skipped, Written, Fetched, Unwritable }
 

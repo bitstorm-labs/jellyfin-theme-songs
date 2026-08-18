@@ -21,15 +21,26 @@ public class ThemeSongsScheduledTask(
 
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        using var http = new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-ThemeSongs/1.0 (+https://github.com/bitstorm-labs)");
+        // Shared with ItemAddedListener: both touch the same ThemeSongs.attempts.json file, and
+        // holding this for the whole sweep (which can run several minutes) is intended - item-added
+        // work is background and non-urgent, so it queues behind the sweep rather than racing it.
+        await ThemeSongsGate.AttemptsFile.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            using var http = new HttpClient();
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-ThemeSongs/1.0 (+https://github.com/bitstorm-labs)");
 
-        var store = new AttemptStore(Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"));
-        var service = new ThemeDownloadService(
-            libraryManager, providerManager, new PlexThemeProvider(http), store, fileSystem,
-            loggerFactory.CreateLogger<ThemeDownloadService>());
+            var store = new AttemptStore(Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"));
+            var service = new ThemeDownloadService(
+                libraryManager, providerManager, new PlexThemeProvider(http), store, fileSystem,
+                loggerFactory.CreateLogger<ThemeDownloadService>());
 
-        await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+            await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ThemeSongsGate.AttemptsFile.Release();
+        }
     }
 
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers() =>

@@ -15,12 +15,10 @@ public class ItemAddedListener(
     IFileSystem fileSystem,
     ILoggerFactory loggerFactory) : IHostedService
 {
-    // Serializes the handler body across concurrent ItemAdded events (e.g. a library scan
-    // adding many series at once), which would otherwise race load -> modify -> save on the
-    // same AttemptStore JSON file and lose updates - including against the nightly sweep.
-    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private static readonly TimeSpan Throttle = TimeSpan.FromSeconds(1);
 
     private readonly ILogger<ItemAddedListener> _logger = loggerFactory.CreateLogger<ItemAddedListener>();
+    private readonly CancellationTokenSource _cts = new();
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -31,6 +29,10 @@ public class ItemAddedListener(
     public Task StopAsync(CancellationToken cancellationToken)
     {
         libraryManager.ItemAdded -= OnItemAdded;
+        // Cancels every in-flight handler body below, not just future ones: unsubscribing alone
+        // only stops new work, but an already-running Task.Run could still be mid-flight against
+        // libraryManager/providerManager while the host is tearing them down.
+        _cts.Cancel();
         return Task.CompletedTask;
     }
 
@@ -39,23 +41,54 @@ public class ItemAddedListener(
         if (ThemeSongsPlugin.Instance?.Configuration.EnableItemAddedHook != true) return;
         if (e.Item is not Series series) return;
 
+        var ct = _cts.Token;
+
         _ = Task.Run(async () =>
         {
-            await Gate.WaitAsync().ConfigureAwait(false);
+            // Shared with ThemeSongsScheduledTask: both touch the same ThemeSongs.attempts.json
+            // file, and this queues behind a running nightly sweep rather than racing it.
+            var gateAcquired = false;
             try
             {
+                await ThemeSongsGate.AttemptsFile.WaitAsync(ct).ConfigureAwait(false);
+                gateAcquired = true;
+
                 using var http = new HttpClient();
                 http.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-ThemeSongs/1.0 (+https://github.com/bitstorm-labs)");
 
                 var store = new AttemptStore(Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"));
-                await store.LoadAsync(CancellationToken.None).ConfigureAwait(false);
+                await store.LoadAsync(ct).ConfigureAwait(false);
 
                 var service = new ThemeDownloadService(
                     libraryManager, providerManager, new PlexThemeProvider(http), store, fileSystem,
                     loggerFactory.CreateLogger<ThemeDownloadService>());
 
-                await service.RunForSeriesAsync(series, CancellationToken.None).ConfigureAwait(false);
-                await store.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+                var madeRequest = false;
+                try
+                {
+                    madeRequest = await service.RunForSeriesAsync(series, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    // Save even if RunForSeriesAsync was cancelled mid-flight, so a recorded
+                    // failure isn't lost. CancellationToken.None deliberately: a cancelled token
+                    // here would lose the very records this save exists to protect (the same
+                    // reasoning behind ThemeDownloadService.RunAsync's own finally-save).
+                    await store.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+
+                if (madeRequest)
+                {
+                    // ~1/sec throttle upstream, matching the nightly sweep's throttle. Only paid
+                    // when an upstream request actually happened - a scan that bulk-adds series
+                    // whose themes are already on disk (or outside the retry window) must not
+                    // stall behind this.
+                    await Task.Delay(Throttle, ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Normal on shutdown (StopAsync cancelled the token) - not a fault, don't warn.
             }
             catch (Exception ex)
             {
@@ -66,7 +99,7 @@ public class ItemAddedListener(
             }
             finally
             {
-                Gate.Release();
+                if (gateAcquired) ThemeSongsGate.AttemptsFile.Release();
             }
         });
     }

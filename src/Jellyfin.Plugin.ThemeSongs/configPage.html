@@ -1,1 +1,37 @@
-<div></div>
+<div id="ThemeSongsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
+  <div data-role="content"><div class="content-primary">
+    <form id="ThemeSongsConfigForm">
+      <div class="inputContainer">
+        <label class="inputLabel" for="RetryAfterDays">Retry a missing theme after (days)</label>
+        <input id="RetryAfterDays" name="RetryAfterDays" type="number" min="1" is="emby-input" />
+        <div class="fieldDescription">Shows with no theme available are retried on this interval.</div>
+      </div>
+      <label class="checkboxContainer">
+        <input is="emby-checkbox" type="checkbox" id="EnableItemAddedHook" />
+        <span>Fetch a theme as soon as a series is added</span>
+      </label>
+      <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+    </form>
+  </div></div>
+  <script type="text/javascript">
+    var ThemeSongsPluginId = "d8d1d1a1-4d9e-4d55-9a2e-0a0a1f5b7c31";
+    document.querySelector('#ThemeSongsConfigPage').addEventListener('pageshow', function () {
+      Dashboard.showLoadingMsg();
+      ApiClient.getPluginConfiguration(ThemeSongsPluginId).then(function (config) {
+        document.querySelector('#RetryAfterDays').value = config.RetryAfterDays;
+        document.querySelector('#EnableItemAddedHook').checked = config.EnableItemAddedHook;
+        Dashboard.hideLoadingMsg();
+      });
+    });
+    document.querySelector('#ThemeSongsConfigForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      Dashboard.showLoadingMsg();
+      ApiClient.getPluginConfiguration(ThemeSongsPluginId).then(function (config) {
+        config.RetryAfterDays = parseInt(document.querySelector('#RetryAfterDays').value, 10);
+        config.EnableItemAddedHook = document.querySelector('#EnableItemAddedHook').checked;
+        ApiClient.updatePluginConfiguration(ThemeSongsPluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
+      });
+      return false;
+    });
+  </script>
+</div>

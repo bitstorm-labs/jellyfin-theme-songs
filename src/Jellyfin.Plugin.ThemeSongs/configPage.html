@@ -3,7 +3,7 @@
     <form id="ThemeSongsConfigForm">
       <div class="inputContainer">
         <label class="inputLabel" for="RetryAfterDays">Retry a missing theme after (days)</label>
-        <input id="RetryAfterDays" name="RetryAfterDays" type="number" min="1" is="emby-input" />
+        <input id="RetryAfterDays" name="RetryAfterDays" type="number" min="1" step="1" required is="emby-input" />
         <div class="fieldDescription">Shows with no theme available are retried on this interval.</div>
       </div>
       <label class="checkboxContainer">
@@ -30,7 +30,10 @@
       e.preventDefault();
       Dashboard.showLoadingMsg();
       ApiClient.getPluginConfiguration(ThemeSongsPluginId).then(function (config) {
-        config.RetryAfterDays = parseInt(document.querySelector('#RetryAfterDays').value, 10);
+        // parseInt('') is NaN, which JSON.stringify emits as null and the server deserializes
+        // into an int as 0 - which would disable backoff entirely. The server clamps too.
+        var retryAfterDays = parseInt(document.querySelector('#RetryAfterDays').value, 10);
+        config.RetryAfterDays = isNaN(retryAfterDays) || retryAfterDays < 1 ? 1 : retryAfterDays;
         config.EnableItemAddedHook = document.querySelector('#EnableItemAddedHook').checked;
         return ApiClient.updatePluginConfiguration(ThemeSongsPluginId, config);
       }).then(Dashboard.processPluginConfigurationUpdateResult).catch(function (err) {

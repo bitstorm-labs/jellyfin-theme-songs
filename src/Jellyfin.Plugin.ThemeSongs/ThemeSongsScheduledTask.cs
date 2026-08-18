@@ -27,15 +27,18 @@ public class ThemeSongsScheduledTask(
         await ThemeSongsGate.AttemptsFile.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-ThemeSongs/1.0 (+https://github.com/bitstorm-labs)");
+            using var http = PlexThemeProvider.CreateClient();
 
-            var store = new AttemptStore(Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"));
+            var store = new AttemptStore(
+                Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"),
+                loggerFactory.CreateLogger<AttemptStore>());
             var service = new ThemeDownloadService(
                 libraryManager, providerManager, new PlexThemeProvider(http), store, fileSystem,
                 loggerFactory.CreateLogger<ThemeDownloadService>());
 
-            await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+            var written = await service.RunAsync(progress, cancellationToken).ConfigureAwait(false);
+            loggerFactory.CreateLogger<ThemeSongsScheduledTask>()
+                .LogInformation("Theme Songs task finished: {Written} theme(s) downloaded.", written);
         }
         finally
         {

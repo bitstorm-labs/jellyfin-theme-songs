@@ -4,7 +4,7 @@ public static class ThemeFile
 {
     /// <summary>Smallest plausible theme. The smallest real one observed was 447 KB;
     /// the upstream's 404 page is 467 bytes.</summary>
-    public const int MinimumBytes = 32 * 1024;
+    private const int MinimumBytes = 32 * 1024;
 
     public static bool IsValidMp3(byte[] body, string? contentType)
     {

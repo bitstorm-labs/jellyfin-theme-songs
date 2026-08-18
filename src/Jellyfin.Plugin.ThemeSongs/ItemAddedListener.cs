@@ -53,20 +53,21 @@ public class ItemAddedListener(
                 await ThemeSongsGate.AttemptsFile.WaitAsync(ct).ConfigureAwait(false);
                 gateAcquired = true;
 
-                using var http = new HttpClient();
-                http.DefaultRequestHeaders.UserAgent.ParseAdd("Jellyfin-ThemeSongs/1.0 (+https://github.com/bitstorm-labs)");
+                using var http = PlexThemeProvider.CreateClient();
 
-                var store = new AttemptStore(Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"));
+                var store = new AttemptStore(
+                    Path.Combine(appPaths.PluginConfigurationsPath, "ThemeSongs.attempts.json"),
+                    loggerFactory.CreateLogger<AttemptStore>());
                 await store.LoadAsync(ct).ConfigureAwait(false);
 
                 var service = new ThemeDownloadService(
                     libraryManager, providerManager, new PlexThemeProvider(http), store, fileSystem,
                     loggerFactory.CreateLogger<ThemeDownloadService>());
 
-                var madeRequest = false;
+                var outcome = ThemeDownloadService.Outcome.Skipped;
                 try
                 {
-                    madeRequest = await service.RunForSeriesAsync(series, ct).ConfigureAwait(false);
+                    outcome = await service.RunForSeriesAsync(series, ct).ConfigureAwait(false);
                 }
                 finally
                 {
@@ -74,10 +75,30 @@ public class ItemAddedListener(
                     // failure isn't lost. CancellationToken.None deliberately: a cancelled token
                     // here would lose the very records this save exists to protect (the same
                     // reasoning behind ThemeDownloadService.RunAsync's own finally-save).
-                    await store.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+                    // Guarded: an exception out of a finally replaces the one propagating, which
+                    // would turn a clean cancellation into a bogus I/O fault.
+                    try
+                    {
+                        await store.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception saveEx)
+                    {
+                        _logger.LogWarning(saveEx, "Could not persist attempt history after handling {Series}", series.Name);
+                    }
                 }
 
-                if (madeRequest)
+                if (outcome == ThemeDownloadService.Outcome.Unwritable)
+                {
+                    // The nightly sweep surfaces this; this path used to swallow it, so a
+                    // read-only library silently ate every newly added series.
+                    _logger.LogError(
+                        "Could not save a theme for the newly added series {Series} - see the preceding write error for the path and cause.",
+                        series.Name);
+                }
+
+                // A series that was skipped (no TVDB id, theme already present, inside the
+                // backoff window) made no upstream request and must not pay the throttle.
+                if (outcome != ThemeDownloadService.Outcome.Skipped)
                 {
                     // ~1/sec throttle upstream, matching the nightly sweep's throttle. Only paid
                     // when an upstream request actually happened - a scan that bulk-adds series

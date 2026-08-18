@@ -58,16 +58,6 @@ https://raw.githubusercontent.com/bitstorm-labs/jellyfin-theme-songs/main/manife
 Then install "Theme Songs" from Dashboard → Plugins → Catalog and restart
 Jellyfin.
 
-> **Note for the maintainer:** this URL only serves a real manifest once the
-> repository has been pushed to GitHub and at least one release has been
-> tagged (`git tag -a vX.Y.Z && git push origin vX.Y.Z`) — the release job in
-> `.github/workflows/build.yml` is what populates `manifest.json` with a
-> version entry and commits it back to `main`. Until that first tag exists,
-> `manifest.json` in this repo is a valid but empty skeleton (no installable
-> versions listed), and the raw GitHub URL above will 404 until the repo
-> itself exists on GitHub. See `.superpowers/sdd/2026-08-17-theme-songs-plugin-plan/task-8-report.md`
-> for what has and hasn't been done yet.
-
 Alternatively, build from source (see below) and drop the resulting DLL into
 your Jellyfin `plugins/Theme Songs/` folder manually.
 
@@ -78,3 +68,7 @@ dotnet restore
 dotnet build -c Release
 dotnet test -c Release
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -19,6 +19,11 @@ public class ThemeDownloadService(
 {
     private static readonly TimeSpan Throttle = TimeSpan.FromSeconds(1);
 
+    /// <summary>One instance is constructed per run (nightly sweep or single item-added
+    /// series), so this gives "log the write failure once per run, not once per item" without
+    /// the two trigger paths having to agree on it separately.</summary>
+    private bool _writeFailureLogged;
+
     public async Task<int> RunAsync(IProgress<double>? progress, CancellationToken ct)
     {
         await attempts.LoadAsync(ct).ConfigureAwait(false);
@@ -30,7 +35,6 @@ public class ThemeDownloadService(
         }).OfType<Series>().ToList();
 
         var written = 0;
-        var libraryUnwritableLogged = false;
 
         try
         {
@@ -61,12 +65,6 @@ public class ThemeDownloadService(
                 }
 
                 if (result == Outcome.Written) written++;
-                if (result == Outcome.Unwritable && !libraryUnwritableLogged)
-                {
-                    // Once per run, not per item: 305 identical errors buries the one that matters.
-                    logger.LogError("Library is not writable; no themes can be saved.");
-                    libraryUnwritableLogged = true;
-                }
                 if (i < series.Count - 1 && result != Outcome.Skipped) await Task.Delay(Throttle, ct).ConfigureAwait(false);
             }
         }
@@ -75,7 +73,16 @@ public class ThemeDownloadService(
             // Save even if the run was cancelled or a series threw past the catch above,
             // so recorded failures aren't lost and the backoff is honoured next run.
             // Use CancellationToken.None: if ct is already cancelled, the save must still succeed.
-            await attempts.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+            // Guarded because an exception out of a finally block *replaces* whatever was
+            // propagating — a disk-full here would masquerade as the cause of a clean shutdown.
+            try
+            {
+                await attempts.SaveAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Could not persist attempt history; backoff may be re-tried next run.");
+            }
         }
 
         progress?.Report(100);
@@ -84,18 +91,15 @@ public class ThemeDownloadService(
     }
 
     /// <summary>Runs a single series through the same fetch/write/refresh pipeline as the nightly
-    /// sweep. Returns true when an upstream request was actually made (i.e. the outcome was
-    /// anything other than <see cref="Outcome.Skipped"/>) so callers that need to throttle
-    /// upstream calls know whether this invocation needs a delay - a series that was skipped
-    /// (no TVDB id, theme already present, inside the backoff window) made no request and must
-    /// not pay one.</summary>
-    public async Task<bool> RunForSeriesAsync(Series series, CancellationToken ct)
-    {
-        var outcome = await TryOneAsync(series, ct).ConfigureAwait(false);
-        return outcome != Outcome.Skipped;
-    }
+    /// sweep. Returns the full outcome rather than a bool: callers need
+    /// <c>!= <see cref="Outcome.Skipped"/></c> to decide whether to pay the upstream throttle
+    /// (a series that was skipped - no TVDB id, theme already present, inside the backoff
+    /// window - made no request and must not pay one), but they also need to be able to see
+    /// <see cref="Outcome.Unwritable"/>, which collapsing to a bool discards entirely.</summary>
+    public async Task<Outcome> RunForSeriesAsync(Series series, CancellationToken ct)
+        => await TryOneAsync(series, ct).ConfigureAwait(false);
 
-    private enum Outcome { Skipped, Written, Fetched, Unwritable }
+    public enum Outcome { Skipped, Written, Fetched, Unwritable }
 
     private async Task<Outcome> TryOneAsync(Series series, CancellationToken ct)
     {
@@ -107,12 +111,14 @@ public class ThemeDownloadService(
         if (File.Exists(dest)) return Outcome.Skipped;
 
         var config = ThemeSongsPlugin.Instance?.Configuration ?? new PluginConfiguration();
-        if (!attempts.ShouldTry(tvdbId, config.RetryAfterDays, DateTimeOffset.UtcNow)) return Outcome.Skipped;
+        // Belt and braces alongside the clamp in PluginConfiguration: a 0 here disables backoff.
+        var retryAfterDays = Math.Max(1, config.RetryAfterDays);
+        if (!attempts.ShouldTry(tvdbId, retryAfterDays, DateTimeOffset.UtcNow)) return Outcome.Skipped;
 
-        byte[]? body;
+        ThemeFetchResult fetch;
         try
         {
-            body = await themeProvider.FetchAsync(tvdbId, ct).ConfigureAwait(false);
+            fetch = await themeProvider.FetchAsync(tvdbId, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -121,19 +127,50 @@ public class ThemeDownloadService(
             return Outcome.Fetched;
         }
 
-        if (body is null)
+        if (fetch.Status == ThemeFetchStatus.NotFound)
         {
+            // The only case that earns a backoff. Information, not Debug: Jellyfin does not emit
+            // Debug at its default level, and "why did nothing happen?" is the question a user
+            // actually has when the plugin appears idle.
             attempts.RecordFailure(tvdbId, DateTimeOffset.UtcNow);
-            logger.LogDebug("No theme available for {Series} (tvdb {Tvdb})", series.Name, tvdbId);
+            logger.LogInformation(
+                "No theme available for {Series} (tvdb {Tvdb}): {Reason}. Will not ask again for {Days} day(s).",
+                series.Name, tvdbId, fetch.Reason, retryAfterDays);
             return Outcome.Fetched;
         }
+
+        if (fetch.Status == ThemeFetchStatus.Transient)
+        {
+            // Deliberately NOT recorded. A bad hour upstream must not mark the whole library
+            // themeless for the length of the backoff window.
+            logger.LogWarning(
+                "Theme lookup for {Series} (tvdb {Tvdb}) did not succeed: {Reason}. Not recording a failure; will retry on the next run.",
+                series.Name, tvdbId, fetch.Reason);
+            return Outcome.Fetched;
+        }
+
+        var body = fetch.Body!;
 
         try
         {
             await ThemeFile.WriteAtomicAsync(dest, body, ct).ConfigureAwait(false);
         }
-        catch (UnauthorizedAccessException) { return Outcome.Unwritable; }
-        catch (IOException) { return Outcome.Unwritable; }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            if (!_writeFailureLogged)
+            {
+                // Once per run, not per item: 305 identical errors buries the one that matters.
+                // The exception and the path are the whole point - "library is not writable" is
+                // actively misleading for a full disk or a refused overwrite.
+                _writeFailureLogged = true;
+                logger.LogError(
+                    ex,
+                    "Cannot write theme for {Series} to {Path}; no further write errors will be logged this run.",
+                    series.Name, dest);
+            }
+
+            return Outcome.Unwritable;
+        }
 
         // Jellyfin does not expose ThemeMedia until the item is refreshed — verified.
         await providerManager.RefreshSingleItem(

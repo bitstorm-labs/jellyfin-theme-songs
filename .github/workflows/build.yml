@@ -31,7 +31,17 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
-      - run: dotnet publish src/Jellyfin.Plugin.ThemeSongs -c Release -o publish
+      # Stamp the assembly with the release version. Without this the csproj's
+      # hardcoded 1.0.0.0 ships in every build, BasePlugin.Version reports it,
+      # and Jellyfin's UI shows 1.0.0.0 no matter which release is installed —
+      # so there is no way to tell what is actually running.
+      - name: Publish
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          dotnet publish src/Jellyfin.Plugin.ThemeSongs -c Release -o publish \
+            -p:Version="$VERSION.0" \
+            -p:AssemblyVersion="$VERSION.0" \
+            -p:FileVersion="$VERSION.0"
       - name: Package
         id: package
         run: |

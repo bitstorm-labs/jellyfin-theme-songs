@@ -1,0 +1,73 @@
+name: Build
+on:
+  push:
+    branches: [main]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore
+      - run: dotnet test -c Release --no-build
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+      - run: dotnet publish src/Jellyfin.Plugin.ThemeSongs -c Release -o publish
+      - name: Package
+        id: package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p artifact
+          ZIP="artifact/theme-songs_${VERSION}.zip"
+          zip -j "$ZIP" publish/Jellyfin.Plugin.ThemeSongs.dll
+          CHECKSUM=$(md5sum "$ZIP" | cut -d' ' -f1)
+          echo "$CHECKSUM" > artifact/checksum.txt
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "checksum=$CHECKSUM" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: artifact/*
+      # manifest.json is the file a user's Jellyfin server reads when they add
+      # this repo as a plugin repository (see README). It has to list every
+      # released version, so CI appends this release's entry and commits the
+      # result straight to main rather than only attaching it to the GitHub
+      # release, which would leave older versions undiscoverable.
+      - name: Update manifest.json
+        run: |
+          python3 .github/scripts/update_manifest.py \
+            --manifest manifest.json \
+            --version "${{ steps.package.outputs.version }}.0" \
+            --checksum "${{ steps.package.outputs.checksum }}" \
+            --source-url "https://github.com/${{ github.repository }}/releases/download/${GITHUB_REF_NAME}/theme-songs_${{ steps.package.outputs.version }}.zip" \
+            --target-abi "10.11.0.0" \
+            --changelog "Release ${{ steps.package.outputs.version }}. See https://github.com/${{ github.repository }}/releases/tag/${GITHUB_REF_NAME} for details."
+      - name: Commit manifest.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "manifest.json unchanged, nothing to commit"
+          else
+            git commit -m "chore: update manifest.json for ${GITHUB_REF_NAME}"
+            git push origin HEAD:main
+          fi

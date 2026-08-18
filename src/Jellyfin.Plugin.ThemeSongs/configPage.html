@@ -19,6 +19,66 @@
       </label>
       <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
     </form>
+
+    <div is="emby-collapse" title="How it works">
+      <div class="collapseContent">
+        <h3 style="margin-top:1em">When it runs</h3>
+        <p class="fieldDescription">
+          A scheduled task, <strong>Download theme songs</strong>, sweeps every TV series
+          in your libraries nightly at 3:00 AM. You can run it any time from
+          Dashboard &rarr; Scheduled Tasks. With the option below enabled, a newly added
+          series is also looked up immediately instead of waiting for the next sweep.
+          Both paths do exactly the same work.
+        </p>
+
+        <h3>What happens for each series</h3>
+        <ol class="fieldDescription">
+          <li><strong>Already has a theme?</strong> Skip it. A file you placed yourself always wins.</li>
+          <li><strong>Find its TVDB ID.</strong> The theme source is keyed by TVDB, so a series
+              without one &mdash; a YouTube channel imported as a series, for instance &mdash;
+              is skipped silently rather than logged as a failure.</li>
+          <li><strong>Check recent history.</strong> If this series was looked up recently and had
+              no theme, it is left alone until the retry interval below has passed.</li>
+          <li><strong>Download</strong> from tvthemes.plexapp.com, throttled to about one request
+              per second so a large first sweep stays polite to a free service.</li>
+          <li><strong>Validate before writing.</strong> A missing theme comes back as a small HTML
+              error page, not a 404 file. Without checking, that page would land on disk named
+              <code>theme.mp3</code> and every client would try to play it. The download must be a
+              real MP3, of plausible size, or it is discarded.</li>
+          <li><strong>Write atomically</strong> &mdash; to a temporary file, then rename into place
+              &mdash; so a download interrupted by a restart cannot leave a half-written file that
+              looks valid.</li>
+          <li><strong>Refresh the item.</strong> Jellyfin does not notice a new <code>theme.mp3</code>
+              on its own; without this step the file is on disk but nothing will play it. The theme
+              usually appears within a few seconds, occasionally a minute or two.</li>
+        </ol>
+
+        <h3>When a theme cannot be found</h3>
+        <p class="fieldDescription">
+          If the service genuinely has no theme for a series, that is remembered and retried on the
+          interval below &mdash; themes do get added for newer shows, so it is worth asking again
+          occasionally, just not every night. A <em>temporary</em> problem (server error, timeout,
+          a download that fails validation) is deliberately <em>not</em> remembered, so a bad hour
+          upstream cannot mark your whole library as themeless until the interval expires.
+        </p>
+
+        <h3>What it never does</h3>
+        <ul class="fieldDescription">
+          <li>Overwrite an existing <code>theme.mp3</code>.</li>
+          <li>Write anything it has not validated as a playable MP3.</li>
+          <li>Touch movies or music &mdash; TVDB IDs are television-only.</li>
+          <li>Delete or move any of your media.</li>
+        </ul>
+
+        <h3>Where the files go</h3>
+        <p class="fieldDescription">
+          Alongside your episodes, as <code>&lt;series folder&gt;/theme.mp3</code> &mdash; the
+          location Jellyfin's built-in theme playback looks in. Playback itself is a
+          <em>client</em> setting: in Jellyfin web it is Settings &rarr; Playback &rarr;
+          &ldquo;Play theme songs&rdquo;.
+        </p>
+      </div>
+    </div>
   </div></div>
   <script type="text/javascript">
     var ThemeSongsPluginId = "d8d1d1a1-4d9e-4d55-9a2e-0a0a1f5b7c31";

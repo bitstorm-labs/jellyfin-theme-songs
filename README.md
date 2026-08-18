@@ -35,6 +35,30 @@ On the reference library this plugin was built against, a full sweep found
 themes for **180 of roughly 305 series** — a useful baseline for what
 "coverage" looks like in practice, not a guarantee for your library.
 
+## How it works
+
+Both triggers — the nightly sweep and the on-add hook — run the same steps for
+each series:
+
+1. **Already has a `theme.mp3`?** Skip. A file you placed yourself always wins.
+2. **Find its TVDB ID.** The source is keyed by TVDB, so a series without one is
+   skipped silently rather than logged as a failure.
+3. **Check recent history.** A series that was looked up recently and had no
+   theme is left alone until `RetryAfterDays` has passed.
+4. **Download**, throttled to ~1 request/sec to stay polite to a free service.
+5. **Validate before writing.** A missing theme returns a small HTML error page,
+   not a 404. Unchecked, that page would land on disk named `theme.mp3` and every
+   client would try to play it.
+6. **Write atomically** — temp file, then rename — so a download interrupted by a
+   restart can't leave a half-written file that looks valid.
+7. **Refresh the item.** Jellyfin doesn't notice a new `theme.mp3` on its own;
+   without this the file exists but nothing plays it.
+
+A genuine "no theme exists" is remembered and retried on the interval. A
+*temporary* failure — server error, timeout, a download that fails validation —
+is deliberately **not** remembered, so a bad hour upstream can't mark your whole
+library as themeless until the interval expires.
+
 ## Requirements
 
 - **Jellyfin 10.11 or later.**

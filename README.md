@@ -1,4 +1,8 @@
+<img src="logo.png" alt="Theme Songs" width="96" align="right" />
+
 # Theme Songs
+
+**By Bitstorm Labs** · [Latest release](https://github.com/bitstorm-labs/jellyfin-theme-songs/releases/latest)
 
 A Jellyfin plugin that downloads TV series theme songs and saves them as
 `theme.mp3` in each series folder, so Jellyfin's built-in "Play Theme Songs"
@@ -58,8 +62,46 @@ https://raw.githubusercontent.com/bitstorm-labs/jellyfin-theme-songs/main/manife
 Then install "Theme Songs" from Dashboard → Plugins → Catalog and restart
 Jellyfin.
 
-Alternatively, build from source (see below) and drop the resulting DLL into
-your Jellyfin `plugins/Theme Songs/` folder manually.
+> **If Jellyfin says it can't read the repository, wait a minute and retry.**
+> `raw.githubusercontent.com` caches for a few minutes, so adding the
+> repository within that window of a fresh release can return a stale or
+> missing manifest. It is not a configuration problem.
+
+### Installing or upgrading manually
+
+Build from source (see below), then place the DLL in
+`<jellyfin-config>/plugins/Theme Songs_<version>/` — for example
+`plugins/Theme Songs_1.0.0.0/`.
+
+> **Stop Jellyfin before replacing the DLL.** Overwriting the file while the
+> server is running corrupts the memory-mapped assembly, and Jellyfin logs a
+> `System.BadImageFormatException: Bad IL range` naming this plugin during its
+> *next shutdown*. The plugin itself is fine — the fix is the ordering:
+>
+> ```bash
+> docker stop jellyfin
+> cp Jellyfin.Plugin.ThemeSongs.dll "…/plugins/Theme Songs_1.0.0.0/"
+> docker start jellyfin
+> ```
+
+## Verifying it works
+
+1. **Run it on demand** — Dashboard → Scheduled Tasks → "Download theme
+   songs" → Run. It processes roughly one series per second, so a first sweep
+   of a large library takes a few minutes.
+2. **Check the files** — `find /path/to/media -maxdepth 4 -name theme.mp3 | wc -l`
+3. **Check Jellyfin sees them** — a theme only becomes visible after a
+   metadata refresh, which the plugin triggers automatically:
+
+   ```
+   GET /Items/<seriesId>/ThemeMedia?api_key=<key>
+   ```
+
+   `ThemeSongsResult.TotalRecordCount` of 1 means that series has a playable
+   theme. It can lag the download by a minute or two.
+4. **Hear it** — theme playback is a *client* setting. In Jellyfin web it's
+   Settings → Playback → "Play theme songs". Open a series page and it should
+   play.
 
 ## Building from source
 
@@ -68,6 +110,13 @@ dotnet restore
 dotnet build -c Release
 dotnet test -c Release
 ```
+
+## Versioning
+
+Released as `vMAJOR.MINOR.PATCH` tags. Each tag builds the plugin, publishes a
+zip to [Releases](https://github.com/bitstorm-labs/jellyfin-theme-songs/releases),
+and appends the version to `manifest.json` so the repository URL above always
+lists every release. Per-version changelogs are on the release pages.
 
 ## License
 

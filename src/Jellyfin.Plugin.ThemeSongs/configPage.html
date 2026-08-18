@@ -1,5 +1,12 @@
 <div id="ThemeSongsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage">
   <div data-role="content"><div class="content-primary">
+    <p class="fieldDescription" style="margin-bottom:1.5em">
+        Themes are saved as <code>theme.mp3</code> inside each series folder, so Jellyfin
+        needs <strong>write access</strong> to your TV library. Sources come from
+        tvthemes.plexapp.com &mdash; a free third-party service covering TV series only,
+        with gaps for very recent shows. Series without a TVDB ID are skipped, and an
+        existing <code>theme.mp3</code> is never overwritten.
+    </p>
     <form id="ThemeSongsConfigForm">
       <div class="inputContainer">
         <label class="inputLabel" for="RetryAfterDays">Retry a missing theme after (days)</label>

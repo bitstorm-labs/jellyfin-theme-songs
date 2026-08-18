@@ -2,10 +2,11 @@
   {
     "guid": "d8d1d1a1-4d9e-4d55-9a2e-0a0a1f5b7c31",
     "name": "Theme Songs",
-    "description": "Automatically downloads theme songs for TV series from tvthemes.plexapp.com and saves them as theme.mp3 in each series folder, so Jellyfin's built-in \"Play Theme Songs\" feature has something to play. Runs nightly as a scheduled task and, optionally, as soon as a new series is added. Never overwrites an existing theme.mp3, and skips series with no TVDB ID.",
-    "overview": "Downloads TV theme songs and saves them as theme.mp3.",
-    "owner": "bitstorm-labs",
+    "description": "Downloads theme songs for your TV series and saves them as theme.mp3 inside each series folder, which is where Jellyfin's built-in \"Play Theme Songs\" feature looks. A nightly scheduled task sweeps the library, and it can optionally fetch a theme as soon as a new series is added.\n\nRequirements: Jellyfin 10.11 or later, and the server process must have write access to your TV library folders \u2014 that is where the files are created. Themes come from tvthemes.plexapp.com, a free third-party service with no SLA that covers TV series only and has gaps for very recent shows.\n\nIt never overwrites an existing theme.mp3, validates every download is a real MP3 before writing it, writes atomically so an interrupted download cannot leave a corrupt file, and remembers failures so it does not re-request a missing theme every night. Series with no TVDB ID are skipped silently.",
+    "overview": "Automatically downloads TV theme songs so Jellyfin can play them on series pages.",
+    "owner": "Bitstorm Labs",
     "category": "Metadata",
+    "imageUrl": "https://raw.githubusercontent.com/bitstorm-labs/jellyfin-theme-songs/main/logo.png",
     "versions": [
       {
         "version": "1.0.0.0",

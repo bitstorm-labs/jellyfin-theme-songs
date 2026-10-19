@@ -75,7 +75,7 @@ library as themeless until the interval expires.
 
 ## Requirements
 
-- **Jellyfin 10.11 or later** (the manifest's target ABI is 10.11.0.0). Current version: **1.0.3**.
+- **Jellyfin 10.11 or later** (the manifest's target ABI is 10.11.0.0). 1.0.3 runs on Jellyfin 12.2. Current version: **1.0.3**.
 - The Jellyfin server process needs **write access** to your TV library
   folders — that's where `theme.mp3` files get created.
 

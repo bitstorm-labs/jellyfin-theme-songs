@@ -8,6 +8,20 @@ A Jellyfin plugin that downloads TV series theme songs and saves them as
 `theme.mp3` in each series folder, so Jellyfin's built-in "Play Theme Songs"
 feature has something to play.
 
+## Works with Sashimi
+
+Sashimi plays the theme quietly when you open a series page. It reads Jellyfin's
+`/Items/{id}/ThemeMedia`, so this plugin only has to put the file in place.
+
+| Platform | Theme songs | Setting |
+|---|---|---|
+| Apple TV | yes | Settings, Play Theme Songs |
+| iPhone and iPad | yes | Settings, Play Theme Songs |
+| Android | yes | Settings, Play theme songs |
+| Roku | yes | Settings, Play Theme Songs |
+
+Without themes on disk, series pages are silent.
+
 ## What it does
 
 - Runs a **nightly scheduled task** that sweeps your library for series
@@ -61,7 +75,7 @@ library as themeless until the interval expires.
 
 ## Requirements
 
-- **Jellyfin 10.11 or later.**
+- **Jellyfin 10.11 or later** (the manifest's target ABI is 10.11.0.0). Current version: **1.0.3**.
 - The Jellyfin server process needs **write access** to your TV library
   folders — that's where `theme.mp3` files get created.
 
@@ -95,7 +109,7 @@ Jellyfin.
 
 Build from source (see below), then place the DLL in
 `<jellyfin-config>/plugins/Theme Songs_<version>/` — for example
-`plugins/Theme Songs_1.0.0.0/`.
+`plugins/Theme Songs_1.0.3.0/`.
 
 > **Stop Jellyfin before replacing the DLL.** Overwriting the file while the
 > server is running corrupts the memory-mapped assembly, and Jellyfin logs a
@@ -104,7 +118,7 @@ Build from source (see below), then place the DLL in
 >
 > ```bash
 > docker stop jellyfin
-> cp Jellyfin.Plugin.ThemeSongs.dll "…/plugins/Theme Songs_1.0.0.0/"
+> cp Jellyfin.Plugin.ThemeSongs.dll "…/plugins/Theme Songs_1.0.3.0/"
 > docker start jellyfin
 > ```
 

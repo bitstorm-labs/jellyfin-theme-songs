@@ -159,3 +159,13 @@ lists every release. Per-version changelogs are on the release pages.
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Credits
+
+- Built on [Jellyfin](https://jellyfin.org/) (the Jellyfin project, GPL-2.0) and its
+  `Jellyfin.Controller` plugin API.
+- Theme files come from [tvthemes.plexapp.com](https://tvthemes.plexapp.com), a
+  service run by Plex, Inc. The themes themselves belong to their respective
+  rights holders. This plugin only fetches them for personal use on your own server.
+- These are separate projects under their own terms. Theme Songs is not
+  affiliated with or endorsed by Jellyfin or Plex.

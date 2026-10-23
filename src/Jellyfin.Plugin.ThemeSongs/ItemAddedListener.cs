@@ -1,7 +1,9 @@
 using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.Entities;
 using MediaBrowser.Model.IO;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,16 +21,19 @@ public class ItemAddedListener(
 
     private readonly ILogger<ItemAddedListener> _logger = loggerFactory.CreateLogger<ItemAddedListener>();
     private readonly CancellationTokenSource _cts = new();
+    private readonly PendingSeries _pending = new();
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         libraryManager.ItemAdded += OnItemAdded;
+        libraryManager.ItemUpdated += OnItemUpdated;
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         libraryManager.ItemAdded -= OnItemAdded;
+        libraryManager.ItemUpdated -= OnItemUpdated;
         // Cancels every in-flight handler body below, not just future ones: unsubscribing alone
         // only stops new work, but an already-running Task.Run could still be mid-flight against
         // libraryManager/providerManager while the host is tearing them down.
@@ -40,7 +45,23 @@ public class ItemAddedListener(
     {
         if (ThemeSongsPlugin.Instance?.Configuration.EnableItemAddedHook != true) return;
         if (e.Item is not Series series) return;
+        if (_pending.OnAdded(series.Id, HasTvdbId(series))) Fetch(series);
+    }
 
+    /// <summary>A brand-new series has no TVDB id when ItemAdded fires; this catches the update
+    /// that arrives once the identify pass has set one (see <see cref="PendingSeries"/>).</summary>
+    private void OnItemUpdated(object? sender, ItemChangeEventArgs e)
+    {
+        if (ThemeSongsPlugin.Instance?.Configuration.EnableItemAddedHook != true) return;
+        if (e.Item is not Series series) return;
+        if (_pending.OnUpdated(series.Id, HasTvdbId(series))) Fetch(series);
+    }
+
+    private static bool HasTvdbId(Series series)
+        => !string.IsNullOrEmpty(series.GetProviderId(MetadataProvider.Tvdb));
+
+    private void Fetch(Series series)
+    {
         var ct = _cts.Token;
 
         _ = Task.Run(async () =>
